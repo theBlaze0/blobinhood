@@ -1,7 +1,7 @@
 # Blobin Hood — Design
 
 **Date:** 2026-07-20
-**Status:** Approved in conversation (name: Blobin Hood, domain blobinhood.io), user-reviewed
+**Status:** Approved in conversation (name: Blobin Hood, domain blobinhood.online (bought: .online, .io was the original pick)), user-reviewed
 
 ## Purpose
 

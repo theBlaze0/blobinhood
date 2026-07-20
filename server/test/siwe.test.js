@@ -17,19 +17,19 @@ function personalSign(msg, key) {
 }
 
 test('buildMessage contains domain, address, nonce and the trust statement', () => {
-  const m = buildMessage({ domain: 'blobinhood.io', address: addr, nonce: 'abc123', issuedAt: '2026-07-20T00:00:00Z' });
-  for (const part of ['blobinhood.io', addr, 'abc123', 'costs nothing, sends nothing']) {
+  const m = buildMessage({ domain: 'blobinhood.online', address: addr, nonce: 'abc123', issuedAt: '2026-07-20T00:00:00Z' });
+  for (const part of ['blobinhood.online', addr, 'abc123', 'costs nothing, sends nothing']) {
     assert.ok(m.includes(part), part);
   }
 });
 
 test('verify accepts a correct personal_sign signature', () => {
-  const m = buildMessage({ domain: 'blobinhood.io', address: addr, nonce: randomNonce(), issuedAt: '2026-07-20T00:00:00Z' });
+  const m = buildMessage({ domain: 'blobinhood.online', address: addr, nonce: randomNonce(), issuedAt: '2026-07-20T00:00:00Z' });
   assert.strictEqual(verify(m, personalSign(m, priv), addr), true);
 });
 
 test('verify rejects wrong signer and tampered message', () => {
-  const m = buildMessage({ domain: 'blobinhood.io', address: addr, nonce: 'n', issuedAt: '2026-07-20T00:00:00Z' });
+  const m = buildMessage({ domain: 'blobinhood.online', address: addr, nonce: 'n', issuedAt: '2026-07-20T00:00:00Z' });
   const sig = personalSign(m, priv);
   assert.strictEqual(verify(m + 'x', sig, addr), false);
   assert.strictEqual(verify(m, sig, '0x' + '11'.repeat(20)), false);

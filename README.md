@@ -1,6 +1,6 @@
 # Blobin Hood
 
-**blobinhood.io — your bag is your blob.** A playable agar.io mirror for a
+**blobinhood.online — your bag is your blob.** A playable agar.io mirror for a
 [Pons](https://ponsfamily.com/launchpad)-launched coin on Robinhood Chain
 (chain id 4663). Your coin balance sets your spawn size, live on-chain buys
 drop golden pellets into the arena, and eating other blobs is for leaderboard
@@ -28,7 +28,7 @@ glory only — **no tokens ever move**.
 
 ```bash
 npm install
-TOKEN_ADDRESS=0xYourCoin DOMAIN=blobinhood.io PORT=8790 npm start
+TOKEN_ADDRESS=0xYourCoin DOMAIN=blobinhood.online PORT=8790 npm start
 ```
 
 - `TOKEN_ADDRESS` empty → pre-launch mode: everyone spawns at base mass, no
@@ -64,7 +64,7 @@ websocket integration test with two live clients.
 systemd unit running `npm start` with the env above; Caddy block:
 
 ```
-blobinhood.io {
+blobinhood.online {
     reverse_proxy /ws localhost:8790
     reverse_proxy localhost:8790
 }
