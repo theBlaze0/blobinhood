@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blobin Hood</title>
+<style>
+  :root { --bg:#0b1020; --fg:#e8ecf8; --green:#3ddc84; --gold:#ffd257; --dim:#8a93b2; --red:#ff5470; }
+  * { margin:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,sans-serif; overflow:hidden; }
+  #game { position:fixed; inset:0; }
+  .panel { background:#141a30ee; border:1px solid #2a3355; border-radius:12px; }
+  #landing { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:10; }
+  #landing .inner { padding:26px 30px; width:min(440px, 92vw); text-align:center; }
+  #landing h1 { font-size:28px; margin-bottom:2px; }
+  #landing h1 span { color:var(--green); }
+  #landing .tag { color:var(--dim); margin-bottom:18px; }
+  #name { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #2a3355; background:#0b1020; color:var(--fg); margin-bottom:10px; font-size:15px; }
+  button { cursor:pointer; border:0; border-radius:8px; padding:11px 14px; font-size:15px; font-weight:600; width:100%; margin-bottom:8px; }
+  #play { background:var(--green); color:#05220f; }
+  #connect { background:#2a3355; color:var(--fg); }
+  details { text-align:left; margin-top:10px; color:var(--dim); font-size:13px; }
+  details summary { cursor:pointer; color:var(--fg); }
+  details pre { white-space:pre-wrap; background:#0b1020; border:1px solid #2a3355; border-radius:8px; padding:10px; margin:8px 0; font-size:11.5px; color:#b7ffda; }
+  details code { color:#b7ffda; }
+  #foot { margin-top:12px; font-size:12px; color:var(--dim); }
+  #foot a { color:var(--green); }
+  #board { position:fixed; top:12px; right:12px; z-index:5; padding:10px 14px; min-width:190px; }
+  #board h3 { font-size:13px; color:var(--dim); margin-bottom:6px; }
+  #board div { display:flex; justify-content:space-between; gap:12px; font-size:13px; }
+  #board div.me { color:var(--green); }
+  #hud { position:fixed; left:12px; bottom:12px; z-index:5; padding:8px 14px; font-size:14px; }
+  #hud b { color:var(--green); }
+  #toast { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:20; padding:9px 16px; display:none; }
+  #dead { position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:9; background:#0b1020aa; }
+  #dead .inner { padding:22px 34px; text-align:center; }
+  #dead .big { font-size:24px; color:var(--red); }
+  #badge { position:fixed; top:12px; left:12px; z-index:20; color:#ffb347; display:none; }
+</style>
+</head><body>
+<canvas id="game"></canvas>
+<div id="landing"><div class="inner panel">
+  <h1>Blobin <span>Hood</span></h1>
+  <div class="tag">your bag is your blob — agar on Robinhood Chain</div>
+  <input id="name" maxlength="16" placeholder="blob name">
+  <button id="play">Play anonymously</button>
+  <button id="connect">Connect wallet &amp; play</button>
+  <details>
+    <summary>How wallet sign-in works (read before connecting)</summary>
+    <p>This site can only ever ask your wallet two things: <code>eth_requestAccounts</code>
+    (see your address) and <code>personal_sign</code> (a free, gas-less signature).
+    There is no transaction code in this site — it cannot move funds, request
+    approvals, or spend gas. You'll be asked to sign exactly this message:</p>
+    <pre id="msg-preview">blobinhood.io wants you to sign in with your Ethereum account:
+0xYourAddress
+
+This signature only proves wallet ownership. It costs nothing, sends nothing, and grants this site no access to your funds.
+
+URI: https://blobinhood.io
+Version: 1
+Chain ID: 4663
+Nonce: (one-time code)
+Issued At: (timestamp)</pre>
+    <p>Your signature proves you own the wallet, so your cell spawns at the size
+    of your bag and grows when your buys land on-chain. Or skip all of it and
+    play anonymously — no wallet needed.</p>
+  </details>
+  <div id="foot">watching live · <span id="commit">…</span> · <a id="src" href="https://github.com" target="_blank" rel="noopener">source</a></div>
+</div></div>
+<div id="board" class="panel"><h3>leaderboard</h3><div id="rows"></div></div>
+<div id="hud" class="panel">mass <b id="mass">—</b></div>
+<div id="toast" class="panel"></div>
+<div id="dead"><div class="inner panel"><div class="big">eaten!</div><div id="respawn"></div></div></div>
+<div id="badge">reconnecting…</div>
+<script src="app.js"></script>
+</body></html>

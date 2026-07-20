@@ -2,7 +2,7 @@
 // Wallet trust invariant: this server only ever VERIFIES gas-less signatures
 // and READS balances. There is no key handling and no transaction code.
 import http from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,8 +23,11 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
   const httpServer = http.createServer((req, res) => {
     if (req.url === '/health') { res.end('ok'); return; }
     if (req.url === '/commit') { res.end(COMMIT); return; }
-    const file = path.join(WEB, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
-    if (!file.startsWith(WEB) || !existsSync(file)) { res.statusCode = 404; res.end('not found'); return; }
+    const urlPath = req.url.split('?')[0];
+    const file = path.join(WEB, urlPath === '/' ? 'index.html' : urlPath);
+    let isFile = false;
+    try { isFile = statSync(file).isFile(); } catch {}
+    if (!file.startsWith(WEB) || !isFile) { res.statusCode = 404; res.end('not found'); return; }
     res.setHeader('content-type', MIME[path.extname(file)] || 'application/octet-stream');
     res.setHeader('content-security-policy', "default-src 'self'; connect-src 'self' ws: wss:; style-src 'unsafe-inline'");
     res.end(readFileSync(file));
