@@ -13,7 +13,8 @@ import { balanceOf, startBuyWatcher } from './chain.js';
 
 const WEB = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
-let COMMIT = 'dev'; try { COMMIT = execSync('git rev-parse --short HEAD', { cwd: WEB }).toString().trim(); } catch {}
+let COMMIT = process.env.COMMIT || 'dev';
+if (COMMIT === 'dev') { try { COMMIT = execSync('git rev-parse --short HEAD', { cwd: WEB }).toString().trim(); } catch {} }
 
 export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddress = '' } = {}) {
   const world = G.createWorld();

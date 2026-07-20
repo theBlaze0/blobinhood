@@ -1,0 +1,23 @@
+# Runs on the same droplet + docker network as the ChipIn ("the-pot") stack,
+# whose Caddy terminates TLS for blobinhood.online and proxies to this
+# container. No ports are published on the host.
+services:
+  blobinhood:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        COMMIT: ${COMMIT:-dev}
+    restart: unless-stopped
+    environment:
+      PORT: "8790"
+      DOMAIN: blobinhood.online
+      TOKEN_ADDRESS: ${TOKEN_ADDRESS:-}
+    networks: [the-pot_default]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  the-pot_default:
+    external: true
