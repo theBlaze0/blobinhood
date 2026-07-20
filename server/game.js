@@ -109,3 +109,18 @@ export function step(world, dtMs) {
   }
   return events;
 }
+
+export function snapshot(world, viewerId = null) {
+  const c = world.cfg;
+  const viewer = viewerId != null ? world.players.get(viewerId) : null;
+  const cx = viewer ? viewer.x : c.world / 2, cy = viewer ? viewer.y : c.world / 2;
+  const inView = (e) => Math.hypot(e.x - cx, e.y - cy) <= c.viewRange;
+  const alive = [...world.players.values()].filter((p) => !p.deadUntil);
+  return {
+    me: viewer ? { id: viewer.id, x: viewer.x, y: viewer.y, m: viewer.m, dead: !!viewer.deadUntil } : null,
+    cells: alive.filter(inView).map((p) => ({ id: p.id, name: p.name, x: p.x, y: p.y, m: p.m })),
+    pellets: world.pellets.filter(inView),
+    gold: world.gold.filter(inView),
+    board: [...alive].sort((a, b) => b.m - a.m).slice(0, 10).map((p) => ({ name: p.name, m: Math.round(p.m), eats: p.eats })),
+  };
+}
