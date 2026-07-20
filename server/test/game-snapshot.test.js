@@ -18,6 +18,19 @@ test('snapshot filters by view range and reports me + board', () => {
   assert.ok(s.board[0].m >= s.board[1].m);
 });
 
+test('snapshot map layer covers the whole world regardless of view range', () => {
+  const w = createWorld({ pellets: 0, viewRange: 100 });
+  const a = addPlayer(w, { name: 'a' });
+  const b = addPlayer(w, { name: 'b' });
+  a.x = a.y = 100; b.x = b.y = 3900;
+  w.gold.push({ x: 2000, y: 2000, m: 50 });
+  const s = snapshot(w, a.id);
+  const ids = s.map.cells.map((c) => c.id);
+  assert.ok(ids.includes(a.id) && ids.includes(b.id)); // far player still on map
+  assert.strictEqual(s.map.gold.length, 1);
+  assert.ok(!('name' in s.map.cells[0])); // map layer stays lightweight
+});
+
 test('spectator snapshot centers on world middle with null me', () => {
   const w = createWorld({ pellets: 0, viewRange: 100 });
   const p = addPlayer(w, { name: 'a' });

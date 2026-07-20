@@ -122,5 +122,9 @@ export function snapshot(world, viewerId = null) {
     pellets: world.pellets.filter(inView),
     gold: world.gold.filter(inView),
     board: [...alive].sort((a, b) => b.m - a.m).slice(0, 10).map((p) => ({ name: p.name, m: Math.round(p.m), eats: p.eats })),
+    map: {
+      cells: alive.map((p) => ({ id: p.id, x: Math.round(p.x), y: Math.round(p.y), m: Math.round(p.m) })),
+      gold: world.gold.map((g) => ({ x: Math.round(g.x), y: Math.round(g.y) })),
+    },
   };
 }

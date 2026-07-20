@@ -158,6 +158,34 @@ function draw() {
     ctx.fillText(c.name, x, y);
   }
   ctx.restore();
+  drawMinimap(cur);
+}
+
+function drawMinimap(cur) {
+  if (!cur.map) return;
+  const size = Math.min(180, canvas.width * 0.22);
+  const pad = 12;
+  const x0 = canvas.width - size - pad, y0 = canvas.height - size - pad;
+  const k = size / state.worldSize;
+
+  ctx.fillStyle = 'rgba(20,26,48,0.85)';
+  ctx.strokeStyle = '#2a3355'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(x0, y0, size, size, 8); ctx.fill(); ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(x0, y0, size, size, 8); ctx.clip();
+  for (const g of cur.map.gold) {
+    ctx.fillStyle = '#ffd257';
+    ctx.beginPath(); ctx.arc(x0 + g.x * k, y0 + g.y * k, 3, 0, 7); ctx.fill();
+  }
+  for (const c of cur.map.cells) {
+    const mine = c.id === state.myId;
+    const r = Math.max(2, Math.min(6, Math.sqrt(c.m) / 4));
+    ctx.fillStyle = mine ? '#b7ffda' : '#3ddc84aa';
+    ctx.beginPath(); ctx.arc(x0 + c.x * k, y0 + c.y * k, mine ? Math.max(r, 3) : r, 0, 7); ctx.fill();
+    if (mine) { ctx.strokeStyle = '#e8ecf8'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  }
+  ctx.restore();
 }
 draw();
 
