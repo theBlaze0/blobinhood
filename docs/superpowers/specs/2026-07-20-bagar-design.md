@@ -53,8 +53,8 @@ wallet-connecting users.
   (BASE = 25, K = 12; balance in whole tokens). Non-holders/spectators-turned-
   players get BASE.
 - Live buys (server watches the pool like Buy Tank, 3 s poll): each buy
-  spawns a golden pellet at a random spot worth `mass = radius-scale of the
-  ETH amount` (same log formula as Buy Tank bubbles, converted to mass). If
+  spawns a golden pellet at a random spot worth
+  `mass = min(120, 10 + 30 · log10(1 + eth/0.001))`. If
   the buyer address is currently signed in, that player's cell also gains
   the same mass instantly with a gold flash.
 - Leaderboard: top-10 by mass, plus per-session "eats" count. Cosmetic only.
