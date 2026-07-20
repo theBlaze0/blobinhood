@@ -1,11 +1,11 @@
-# Bagar.io — Design
+# Blobin Hood — Design
 
 **Date:** 2026-07-20
-**Status:** Approved in conversation (name: Bagar.io), pending spec review
+**Status:** Approved in conversation (name: Blobin Hood, domain blobinhood.io), user-reviewed
 
 ## Purpose
 
-A playable agar.io mirror for the user's upcoming Pons-launchpad coin on
+Blobin Hood ("your bag is your blob"): a playable agar.io mirror for the user's upcoming Pons-launchpad coin on
 Robinhood Chain. "Your bag is your blob": a player's coin balance sets their
 spawn size; live on-chain buys drop golden pellets into the arena. Stakes are
 cosmetic only — no tokens ever move. The site must be visibly trustworthy to
@@ -62,7 +62,7 @@ wallet-connecting users.
 
 ## Architecture
 
-Three units in one repo (`~/bagar`):
+Three units in one repo (`~/blobinhood`):
 
 1. **`server/game.js` — pure simulation.** No I/O, no timers. Exports
    `createWorld(cfg)`, `addPlayer/removePlayer`, `setTarget(id, vec)`,
@@ -118,7 +118,7 @@ any mechanic that moves or approves tokens.
 
 ## Deployment
 
-Public GitHub repo `bagar`. Droplet: `node server/index.js` under systemd;
+Public GitHub repo `blobinhood`. Droplet: `node server/index.js` under systemd;
 Caddy subdomain block serving `web/` statically and proxying `/ws` with
 websocket upgrade. Config via env: `TOKEN_ADDRESS` (empty pre-launch),
 `PORT`, `DOMAIN` (for SIWE domain binding). Exact subdomain chosen at deploy
