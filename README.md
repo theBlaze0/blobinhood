@@ -58,6 +58,8 @@ websocket integration test with two live clients.
 | Spawn mass | `min(100, 25 + 12·log10(1 + balance/10 000))` |
 | Gold pellet (per buy) | `min(120, 10 + 30·log10(1 + eth/0.001))` mass |
 | Speed | `clamp(400 / m^0.32, 18, 160)` |
+| Split (Space) | each cell ≥50 mass halves toward cursor; max 8 pieces; re-merge after `min(20s, 12s + m·20ms)` |
+| Eject (Q) | each cell ≥30 mass pays 16, fires a 12-mass blob anyone can collect |
 
 ## Deploy (droplet sketch)
 

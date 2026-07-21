@@ -11,6 +11,8 @@ const state = {
   playing: false, myId: null, worldSize: 4000,
   prev: null, cur: null, curAt: 0, prevAt: 0,
   wallet: null, backoff: 1000,
+  cam: { x: 2000, y: 2000, zoom: 0.5 },
+  mouse: null,
 };
 
 fetch('/commit').then((r) => r.text()).then((c) => { $('commit').textContent = 'commit ' + c; }).catch(() => {});
@@ -36,6 +38,7 @@ function connect() {
       state.prev = state.cur; state.prevAt = state.curAt;
       state.cur = m; state.curAt = performance.now();
       renderBoard(m.board);
+      sendAim();
       if (m.me) $('mass').textContent = Math.round(m.me.m);
     } else if (m.t === 'joined') {
       state.playing = true; state.myId = m.id; state.worldSize = m.world;
@@ -79,27 +82,44 @@ $('connect').onclick = async () => {
   } catch { toast('wallet connection declined'); }
 };
 
-// aim: mouse position relative to screen center, throttled to 20/s
+// aim: convert mouse to a world-space point via the camera, throttled to 20/s.
+// Resent on every snapshot too, so a stationary cursor keeps steering split pieces.
 let lastAim = 0;
-const aim = (cx, cy) => {
+const sendAim = () => {
+  if (!state.playing || !state.mouse) return;
   const now = performance.now();
-  if (!state.playing || now - lastAim < 50) return;
+  if (now - lastAim < 50) return;
   lastAim = now;
-  sendWhenReady({ t: 'aim', x: cx - canvas.width / 2, y: cy - canvas.height / 2 });
+  sendWhenReady({
+    t: 'aim',
+    x: state.cam.x + (state.mouse.x - canvas.width / 2) / state.cam.zoom,
+    y: state.cam.y + (state.mouse.y - canvas.height / 2) / state.cam.zoom,
+  });
 };
-addEventListener('mousemove', (e) => aim(e.clientX, e.clientY));
-addEventListener('touchmove', (e) => { const t = e.touches[0]; aim(t.clientX, t.clientY); }, { passive: true });
+addEventListener('mousemove', (e) => { state.mouse = { x: e.clientX, y: e.clientY }; sendAim(); });
+addEventListener('touchmove', (e) => { const t = e.touches[0]; state.mouse = { x: t.clientX, y: t.clientY }; sendAim(); }, { passive: true });
+
+addEventListener('keydown', (e) => {
+  if (!state.playing || document.activeElement === $('name')) return;
+  if (e.code === 'Space') { e.preventDefault(); sendWhenReady({ t: 'split' }); }
+  if (e.code === 'KeyQ') sendWhenReady({ t: 'eject' });
+});
 
 function renderBoard(board) {
   $('rows').innerHTML = board.map((r, i) =>
     `<div${state.cur?.me && r.name === nameOf(state.myId) ? ' class="me"' : ''}><span>${i + 1}. ${esc(r.name)}</span><span>${r.m} · ${r.eats}🍴</span></div>`
   ).join('');
 }
-const nameOf = (id) => state.cur?.cells.find((c) => c.id === id)?.name;
+const nameOf = (id) => state.cur?.cells.find((c) => c.pid === id)?.name;
 const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
 
 const radius = (m) => 4 * Math.sqrt(m);
 const lerp = (a, b, t) => a + (b - a) * t;
+
+const cellKeys = (cells) => {
+  const seen = {};
+  return cells.map((c) => { const n = (seen[c.pid] = (seen[c.pid] || 0) + 1); return c.pid + ':' + n; });
+};
 
 function draw() {
   requestAnimationFrame(draw);
@@ -108,12 +128,18 @@ function draw() {
   const cur = state.cur;
   if (!cur) return;
   const t = Math.min(1, (performance.now() - state.curAt) / 100);
-  const prevOf = (id) => state.prev?.cells.find((c) => c.id === id);
+  const prevKeys = state.prev ? cellKeys(state.prev.cells) : [];
+  const curKeys = cellKeys(cur.cells);
+  const prevOf = (key) => {
+    const i = prevKeys.indexOf(key);
+    return i >= 0 ? state.prev.cells[i] : null;
+  };
 
   const meCur = cur.me, mePrev = state.prev?.me;
   const camX = meCur ? lerp(mePrev?.x ?? meCur.x, meCur.x, t) : state.worldSize / 2;
   const camY = meCur ? lerp(mePrev?.y ?? meCur.y, meCur.y, t) : state.worldSize / 2;
   const zoom = meCur ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(meCur.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
+  state.cam = { x: camX, y: camY, zoom };
 
   ctx.save();
   ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -133,6 +159,10 @@ function draw() {
     ctx.fillStyle = '#2f9e63';
     ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 7); ctx.fill();
   }
+  for (const e of cur.ejected || []) {
+    ctx.fillStyle = '#7cffb0';
+    ctx.beginPath(); ctx.arc(e.x, e.y, 6, 0, 7); ctx.fill();
+  }
   for (const g of cur.gold) {
     ctx.save();
     ctx.shadowColor = '#ffd257'; ctx.shadowBlur = 25;
@@ -140,22 +170,27 @@ function draw() {
     ctx.beginPath(); ctx.arc(g.x, g.y, Math.max(8, radius(g.m) / 2), 0, 7); ctx.fill();
     ctx.restore();
   }
-  const cells = [...cur.cells].sort((a, b) => a.m - b.m);
-  for (const c of cells) {
-    const pv = prevOf(c.id);
+  // one name tag per player, on their biggest visible cell
+  const biggest = {};
+  for (const c of cur.cells) if (!biggest[c.pid] || c.m > biggest[c.pid].m) biggest[c.pid] = c;
+  const order = cur.cells.map((c, i) => ({ c, key: curKeys[i] })).sort((a, b) => a.c.m - b.c.m);
+  for (const { c, key } of order) {
+    const pv = prevOf(key);
     const x = lerp(pv?.x ?? c.x, c.x, t), y = lerp(pv?.y ?? c.y, c.y, t);
     const r = radius(lerp(pv?.m ?? c.m, c.m, t));
-    const mine = c.id === state.myId;
+    const mine = c.pid === state.myId;
     const grad = ctx.createRadialGradient(x - r / 3, y - r / 3, r / 5, x, y, r);
     grad.addColorStop(0, mine ? '#b7ffda' : '#7ce8ae');
     grad.addColorStop(1, mine ? '#3ddc84' : '#1f8f52');
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
     if (mine) { ctx.strokeStyle = '#e8ecf8'; ctx.lineWidth = 2; ctx.stroke(); }
-    ctx.fillStyle = '#05220f';
-    ctx.font = `bold ${Math.max(11, r / 3)}px system-ui`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(c.name, x, y);
+    if (biggest[c.pid] === c) {
+      ctx.fillStyle = '#05220f';
+      ctx.font = `bold ${Math.max(11, r / 3)}px system-ui`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(c.name, x, y);
+    }
   }
   ctx.restore();
   drawMinimap(cur);

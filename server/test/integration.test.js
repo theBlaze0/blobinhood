@@ -29,6 +29,19 @@ test('two anonymous players join, aim, and appear in snapshots', async () => {
   a.close(); b.close(); await srv.close();
 });
 
+test('split and eject messages are accepted and rate-limited without crashing', async () => {
+  const srv = startServer({ port: 0, domain: 'test', tokenAddress: '' });
+  const port = await srv.ready;
+  const a = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  await new Promise((r) => a.on('open', r));
+  a.send(JSON.stringify({ t: 'join', name: 'alice' }));
+  await once(a, 'joined');
+  for (let i = 0; i < 20; i++) { a.send(JSON.stringify({ t: 'split' })); a.send(JSON.stringify({ t: 'eject' })); }
+  const snap = await once(a, 'snap');
+  assert.ok(snap.me.cells.length >= 1); // base mass 25 < 50: still one cell, no crash
+  a.close(); await srv.close();
+});
+
 test('spectator hello receives snapshots with null me', async () => {
   const srv = startServer({ port: 0, domain: 'test', tokenAddress: '' });
   const port = await srv.ready;
