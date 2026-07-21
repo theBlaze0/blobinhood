@@ -171,12 +171,11 @@ function draw() {
   const camTX = meE ? meE.x : state.worldSize / 2;
   const camTY = meE ? meE.y : state.worldSize / 2;
   const zoomT = meCur ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(meCur.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
-  // ease camera and zoom toward their targets: mass pickups and snap
-  // reconciliation bend the view instead of jolting it
-  const ease = 0.25;
-  const camX = lerp(state.cam.x, camTX, ease);
-  const camY = lerp(state.cam.y, camTY, ease);
-  const zoom = lerp(state.cam.zoom, zoomT, ease * 0.6);
+  // camera follows the predicted blob directly (easing here rubber-bands
+  // steering); only zoom eases, so mass pickups don't jolt the view
+  const camX = camTX;
+  const camY = camTY;
+  const zoom = lerp(state.cam.zoom, zoomT, 0.15);
   state.cam = { x: camX, y: camY, zoom };
 
   ctx.save();
