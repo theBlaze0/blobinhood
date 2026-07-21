@@ -8,6 +8,7 @@ export const defaults = {
   eatRatio: 1.25, absorb: 0.8, respawnMs: 3000,
   speedS: 400, speedExp: 0.32, minSpeed: 18, maxSpeed: 160,
   viewRange: 1200,
+  viruses: 18, virusMass: 100, virusThreshold: 115, virusBonus: 10, virusImpulse: 24,
   maxCells: 8, minSplitMass: 50, splitImpulse: 28,
   minEjectMass: 30, ejectCost: 16, ejectMass: 12, ejectImpulse: 22,
   maxEjected: 200, impulseDecay: 0.92,
@@ -40,6 +41,7 @@ export function createWorld(cfg = {}) {
     pellets: Array.from({ length: c.pellets }, () => newPellet(c)),
     gold: [],
     ejected: [],
+    viruses: Array.from({ length: c.viruses }, () => ({ x: rnd(c.world), y: rnd(c.world) })),
   };
 }
 
@@ -47,8 +49,10 @@ export function addPlayer(world, { name, addr = null, balance = 0 }) {
   const c = world.cfg;
   const m = spawnMass(balance, c);
   const x = rnd(c.world), y = rnd(c.world);
+  const id = world.nextId++;
   const p = {
-    id: world.nextId++, name: String(name || 'blob').slice(0, 16), addr,
+    id, name: String(name || 'blob').slice(0, 16), addr,
+    hue: Math.round((id * 137.508) % 360),
     spawn: m, eats: 0, deadUntil: 0, tx: x, ty: y,
     cells: [{ x, y, m, vx: 0, vy: 0, mergeAt: 0 }],
   };
@@ -189,6 +193,36 @@ export function step(world, dtMs) {
     e.vx *= Math.pow(c.impulseDecay, ticks); e.vy *= Math.pow(c.impulseDecay, ticks);
   }
 
+  // virus pops: a big-enough cell touching a virus explodes into pieces
+  for (const p of alive) {
+    for (let vi = world.viruses.length - 1; vi >= 0; vi--) {
+      const v = world.viruses[vi];
+      for (const cell of p.cells) {
+        if (cell.m < c.virusThreshold) continue;
+        if (Math.hypot(cell.x - v.x, cell.y - v.y) >= radius(cell.m) - radius(c.virusMass) / 3) continue;
+        world.viruses.splice(vi, 1);
+        world.viruses.push({ x: rnd(c.world), y: rnd(c.world) }); // keep the count topped up
+        cell.m += c.virusBonus;
+        const slots = c.maxCells - p.cells.length;
+        const n = Math.min(slots + 1, Math.max(2, Math.floor(cell.m / 45)));
+        if (n >= 2) {
+          const pieceM = cell.m / n;
+          const mergeMs = Math.min(c.mergeCapMs, c.mergeBaseMs + pieceM * c.mergeMassMs);
+          cell.m = pieceM;
+          cell.mergeAt = world.time + mergeMs;
+          for (let k = 1; k < n; k++) {
+            const a = Math.random() * Math.PI * 2;
+            p.cells.push({ x: cell.x, y: cell.y, m: pieceM,
+                           vx: Math.cos(a) * c.virusImpulse, vy: Math.sin(a) * c.virusImpulse,
+                           mergeAt: world.time + mergeMs });
+          }
+        }
+        events.push({ t: 'pop', id: p.id });
+        break;
+      }
+    }
+  }
+
   // enemy eating, per cell
   const flat = [];
   for (const p of alive) for (const cell of p.cells) flat.push({ p, cell });
@@ -241,7 +275,7 @@ export function snapshot(world, viewerId = null, { light = false } = {}) {
   const alive = [...world.players.values()].filter((p) => !p.deadUntil);
   const cells = [];
   for (const p of alive) for (const cell of p.cells) {
-    if (inView(cell)) cells.push({ pid: p.id, name: p.name, x: rInt(cell.x), y: rInt(cell.y), m: r1(cell.m) });
+    if (inView(cell)) cells.push({ pid: p.id, name: p.name, hue: p.hue, x: rInt(cell.x), y: rInt(cell.y), m: r1(cell.m) });
   }
   const snap = {
     me: viewer ? {
@@ -254,12 +288,13 @@ export function snapshot(world, viewerId = null, { light = false } = {}) {
   };
   if (light) return snap;
   snap.pellets = world.pellets.filter(inView).map((p) => ({ x: rInt(p.x), y: rInt(p.y), m: p.m }));
+  snap.viruses = world.viruses.map((v) => ({ x: rInt(v.x), y: rInt(v.y) }));
   snap.board = [...alive].sort((a, b) => totalMass(b) - totalMass(a)).slice(0, 10)
-    .map((p) => ({ name: p.name, m: rInt(totalMass(p)), eats: p.eats }));
+    .map((p) => ({ name: p.name, hue: p.hue, m: rInt(totalMass(p)), eats: p.eats }));
   snap.map = {
     cells: alive.map((p) => {
       const cc = centroidOf(p);
-      return { id: p.id, x: rInt(cc.x), y: rInt(cc.y), m: rInt(totalMass(p)) };
+      return { id: p.id, hue: p.hue, x: rInt(cc.x), y: rInt(cc.y), m: rInt(totalMass(p)) };
     }),
     gold: world.gold.map((g) => ({ x: rInt(g.x), y: rInt(g.y) })),
   };
