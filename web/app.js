@@ -38,7 +38,7 @@ function connect() {
       state.prev = state.cur; state.prevAt = state.curAt;
       state.cur = m; state.curAt = performance.now();
       if (m.pellets) { // full snap (2 Hz): static/heavy layers ride along
-        state.static = { pellets: m.pellets, map: m.map };
+        state.static = { pellets: m.pellets, map: m.map, viruses: m.viruses ?? [] };
         renderBoard(m.board);
       }
       // hide pellets a cell has already swallowed so pickups look instant
@@ -47,6 +47,15 @@ function connect() {
         state.static.pellets = state.static.pellets.filter((p) => {
           for (const c of m.cells) {
             if (Math.hypot(c.x - p.x, c.y - p.y) < radius(c.m)) return false;
+          }
+          return true;
+        });
+      }
+      // likewise hide a virus the moment a big-enough cell covers it
+      if (state.static?.viruses?.length && m.cells.length) {
+        state.static.viruses = state.static.viruses.filter((v) => {
+          for (const c of m.cells) {
+            if (c.m >= 115 && Math.hypot(c.x - v.x, c.y - v.y) < radius(c.m) - 13) return false;
           }
           return true;
         });
@@ -120,7 +129,7 @@ addEventListener('keydown', (e) => {
 
 function renderBoard(board) {
   $('rows').innerHTML = board.map((r, i) =>
-    `<div${state.cur?.me && r.name === nameOf(state.myId) ? ' class="me"' : ''}><span>${i + 1}. ${esc(r.name)}</span><span>${r.m} · ${r.eats}🍴</span></div>`
+    `<div${state.cur?.me && r.name === nameOf(state.myId) ? ' class="me"' : ''}><span style="color:hsl(${r.hue ?? 140} 75% 68%)">${i + 1}. ${esc(r.name)}</span><span>${r.m} · ${r.eats}🍴</span></div>`
   ).join('');
 }
 const nameOf = (id) => state.cur?.cells.find((c) => c.pid === id)?.name;
@@ -194,7 +203,7 @@ function draw() {
       x = lerp(best.x, x, k); y = lerp(best.y, y, k);
       r = lerp(best.r, r, 0.2);
     }
-    nextDisp.push({ pid: c.pid, name: c.name, x, y, r, mine, tag: biggest[c.pid] === c });
+    nextDisp.push({ pid: c.pid, name: c.name, hue: c.hue ?? 140, x, y, r, mine, tag: biggest[c.pid] === c });
   }
   state.disp = nextDisp;
 
@@ -232,6 +241,17 @@ function draw() {
     ctx.fillStyle = '#7cffb0';
     ctx.beginPath(); ctx.arc(e.x, e.y, 6, 0, 7); ctx.fill();
   }
+  for (const v of state.static?.viruses ?? []) {
+    ctx.fillStyle = '#2fae57';
+    ctx.strokeStyle = '#59f28f'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < 32; i++) {
+      const a = (i / 32) * Math.PI * 2;
+      const rr = i % 2 === 0 ? 40 : 33; // 16 spikes
+      ctx[i === 0 ? 'moveTo' : 'lineTo'](v.x + Math.cos(a) * rr, v.y + Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
   for (const g of cur.gold) {
     ctx.save();
     ctx.shadowColor = '#ffd257'; ctx.shadowBlur = 25;
@@ -241,13 +261,13 @@ function draw() {
   }
   for (const d of nextDisp) {
     const grad = ctx.createRadialGradient(d.x - d.r / 3, d.y - d.r / 3, d.r / 5, d.x, d.y, d.r);
-    grad.addColorStop(0, d.mine ? '#b7ffda' : '#7ce8ae');
-    grad.addColorStop(1, d.mine ? '#3ddc84' : '#1f8f52');
+    grad.addColorStop(0, `hsl(${d.hue} 80% ${d.mine ? 80 : 72}%)`);
+    grad.addColorStop(1, `hsl(${d.hue} 60% ${d.mine ? 45 : 38}%)`);
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 7); ctx.fill();
     if (d.mine) { ctx.strokeStyle = '#e8ecf8'; ctx.lineWidth = 2; ctx.stroke(); }
     if (d.tag) {
-      ctx.fillStyle = '#05220f';
+      ctx.fillStyle = `hsl(${d.hue} 90% 12%)`;
       ctx.font = `bold ${Math.max(11, d.r / 3)}px system-ui`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(d.name, d.x, d.y);
@@ -277,7 +297,7 @@ function drawMinimap(cur) {
   for (const c of cur.map.cells) {
     const mine = c.id === state.myId;
     const r = Math.max(2, Math.min(6, Math.sqrt(c.m) / 4));
-    ctx.fillStyle = mine ? '#b7ffda' : '#3ddc84aa';
+    ctx.fillStyle = mine ? `hsl(${c.hue ?? 140} 85% 80%)` : `hsl(${c.hue ?? 140} 70% 60% / 0.8)`;
     ctx.beginPath(); ctx.arc(x0 + c.x * k, y0 + c.y * k, mine ? Math.max(r, 3) : r, 0, 7); ctx.fill();
     if (mine) { ctx.strokeStyle = '#e8ecf8'; ctx.lineWidth = 1.5; ctx.stroke(); }
   }
