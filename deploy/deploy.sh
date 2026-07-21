@@ -14,7 +14,7 @@ echo "==> Syncing repo to $SSH_TARGET:$REMOTE_DIR"
 ssh "$SSH_TARGET" "mkdir -p $REMOTE_DIR"
 rsync -az --delete --exclude node_modules --exclude .git ./ "$SSH_TARGET:$REMOTE_DIR/"
 
-echo "==> Building & starting (commit $COMMIT)"
-ssh "$SSH_TARGET" "cd $REMOTE_DIR && COMMIT=$COMMIT docker compose -f deploy/docker-compose.prod.yml up -d --build"
+echo "==> Building & starting (commit $COMMIT, token '${TOKEN_ADDRESS:-none}')"
+ssh "$SSH_TARGET" "cd $REMOTE_DIR && COMMIT=$COMMIT TOKEN_ADDRESS='${TOKEN_ADDRESS:-}' docker compose -f deploy/docker-compose.prod.yml up -d --build"
 
 echo "==> Done — served as https://blobinhood.online once DNS points at the droplet"

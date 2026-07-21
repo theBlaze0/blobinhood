@@ -59,14 +59,17 @@ export function startBuyWatcher({ token, onBuy, intervalMs = 3000 }) {
     try {
       if (!pool) {
         pool = await resolvePool(token);
-        if (pool) from = (await rpc('eth_blockNumber').then((h) => parseInt(h, 16))) + 1;
+        if (pool) {
+          from = (await rpc('eth_blockNumber').then((h) => parseInt(h, 16))) + 1;
+          console.log(`buy watcher: pool ${pool} resolved for ${token}, watching from block ${from}`);
+        }
       } else {
         const head = parseInt(await rpc('eth_blockNumber'), 16);
         if (head >= from) {
           const logs = await rpc('eth_getLogs', [{ address: pool, topics: [CHAIN.swapTopic], fromBlock: hexBlock(from), toBlock: hexBlock(head) }]);
           for (const l of logs) {
             const t = decodeSwap(l, is0);
-            if (t.side === 'buy') onBuy(t);
+            if (t.side === 'buy') { console.log(`buy watcher: ${t.eth} ETH buy by ${t.buyer} (${t.tx})`); onBuy(t); }
           }
           from = head + 1;
         }
