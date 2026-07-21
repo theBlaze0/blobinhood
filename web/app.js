@@ -211,6 +211,8 @@ function draw() {
   const biggest = {};
   for (const c of cur.cells) if (!biggest[c.pid] || c.m > biggest[c.pid].m) biggest[c.pid] = c;
   const order = [...cur.cells].sort((a, b) => a.m - b.m);
+  const disp = state.disp ?? [];
+  const nextDisp = [];
   for (const c of order) {
     const mine = c.pid === state.myId;
     const pv = prevMatch(c);
@@ -220,7 +222,21 @@ function draw() {
     } else {
       x = lerp(pv?.x ?? c.x, c.x, t); y = lerp(pv?.y ?? c.y, c.y, t);
     }
-    const r = radius(lerp(pv?.m ?? c.m, c.m, t));
+    let r = radius(c.m);
+    // blend the DISPLAYED blob toward its target so snap-boundary
+    // reconciliation and growth become glides, not 20 Hz pops
+    let best = null, bd = 150;
+    for (const d of disp) {
+      if (d.pid !== c.pid) continue;
+      const dd = Math.hypot(d.x - x, d.y - y);
+      if (dd < bd) { bd = dd; best = d; }
+    }
+    if (best) {
+      const k = mine ? 0.5 : 0.35;
+      x = lerp(best.x, x, k); y = lerp(best.y, y, k);
+      r = lerp(best.r, r, 0.2);
+    }
+    nextDisp.push({ pid: c.pid, x, y, r });
     const grad = ctx.createRadialGradient(x - r / 3, y - r / 3, r / 5, x, y, r);
     grad.addColorStop(0, mine ? '#b7ffda' : '#7ce8ae');
     grad.addColorStop(1, mine ? '#3ddc84' : '#1f8f52');
@@ -234,6 +250,7 @@ function draw() {
       ctx.fillText(c.name, x, y);
     }
   }
+  state.disp = nextDisp;
   ctx.restore();
   if (state.static?.map) drawMinimap(state.static);
 }
