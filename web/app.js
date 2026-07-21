@@ -41,6 +41,16 @@ function connect() {
         state.static = { pellets: m.pellets, map: m.map };
         renderBoard(m.board);
       }
+      // hide pellets a cell has already swallowed so pickups look instant
+      // (the authoritative pellet list only refreshes on full snaps)
+      if (state.static?.pellets?.length && m.cells.length) {
+        state.static.pellets = state.static.pellets.filter((p) => {
+          for (const c of m.cells) {
+            if (Math.hypot(c.x - p.x, c.y - p.y) < radius(c.m)) return false;
+          }
+          return true;
+        });
+      }
       sendAim();
       if (m.me) $('mass').textContent = Math.round(m.me.m);
     } else if (m.t === 'joined') {
@@ -128,9 +138,16 @@ const extrap = (x, y, m, tgt, age) => {
   return { x: x + (dx / d) * step, y: y + (dy / d) * step };
 };
 
-const cellKeys = (cells) => {
-  const seen = {};
-  return cells.map((c) => { const n = (seen[c.pid] = (seen[c.pid] || 0) + 1); return c.pid + ':' + n; });
+// pair a current cell with its previous-snap self by owner + proximity,
+// so cell-count changes (split/merge/death) never shift the pairing
+const prevMatch = (c) => {
+  let best = null, bd = 200; // beyond 200 world units it's not the same cell
+  for (const p of state.prev?.cells ?? []) {
+    if (p.pid !== c.pid) continue;
+    const d = Math.hypot(p.x - c.x, p.y - c.y);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
 };
 
 function draw() {
@@ -143,12 +160,6 @@ function draw() {
   const gap = Math.max(40, Math.min(200, state.curAt - state.prevAt));
   const t = Math.min(1, (now - state.curAt) / gap);
   const age = Math.min(0.25, (now - state.curAt) / 1000); // extrapolation horizon for own cells
-  const prevKeys = state.prev ? cellKeys(state.prev.cells) : [];
-  const curKeys = cellKeys(cur.cells);
-  const prevOf = (key) => {
-    const i = prevKeys.indexOf(key);
-    return i >= 0 ? state.prev.cells[i] : null;
-  };
 
   const tgt = state.playing && state.mouse ? {
     x: state.cam.x + (state.mouse.x - canvas.width / 2) / state.cam.zoom,
@@ -157,9 +168,15 @@ function draw() {
 
   const meCur = cur.me;
   const meE = meCur ? extrap(meCur.x, meCur.y, meCur.m, tgt, age) : null;
-  const camX = meE ? meE.x : state.worldSize / 2;
-  const camY = meE ? meE.y : state.worldSize / 2;
-  const zoom = meCur ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(meCur.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
+  const camTX = meE ? meE.x : state.worldSize / 2;
+  const camTY = meE ? meE.y : state.worldSize / 2;
+  const zoomT = meCur ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(meCur.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
+  // ease camera and zoom toward their targets: mass pickups and snap
+  // reconciliation bend the view instead of jolting it
+  const ease = 0.25;
+  const camX = lerp(state.cam.x, camTX, ease);
+  const camY = lerp(state.cam.y, camTY, ease);
+  const zoom = lerp(state.cam.zoom, zoomT, ease * 0.6);
   state.cam = { x: camX, y: camY, zoom };
 
   ctx.save();
@@ -194,17 +211,16 @@ function draw() {
   // one name tag per player, on their biggest visible cell
   const biggest = {};
   for (const c of cur.cells) if (!biggest[c.pid] || c.m > biggest[c.pid].m) biggest[c.pid] = c;
-  const order = cur.cells.map((c, i) => ({ c, key: curKeys[i] })).sort((a, b) => a.c.m - b.c.m);
-  for (const { c, key } of order) {
+  const order = [...cur.cells].sort((a, b) => a.m - b.m);
+  for (const c of order) {
     const mine = c.pid === state.myId;
+    const pv = prevMatch(c);
     let x, y;
     if (mine && tgt) {
       ({ x, y } = extrap(c.x, c.y, c.m, tgt, age)); // own cells: dead-reckoned, no render-behind
     } else {
-      const pv = prevOf(key);
       x = lerp(pv?.x ?? c.x, c.x, t); y = lerp(pv?.y ?? c.y, c.y, t);
     }
-    const pv = prevOf(key);
     const r = radius(lerp(pv?.m ?? c.m, c.m, t));
     const grad = ctx.createRadialGradient(x - r / 3, y - r / 3, r / 5, x, y, r);
     grad.addColorStop(0, mine ? '#b7ffda' : '#7ce8ae');
