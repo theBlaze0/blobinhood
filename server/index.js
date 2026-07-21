@@ -38,7 +38,7 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
   const send = (ws, m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
 
   wss.on('connection', (ws) => {
-    clients.set(ws, { playerId: null, aimCount: 0 });
+    clients.set(ws, { playerId: null, aimCount: 0, lastSplit: 0, lastEject: 0 });
     ws.on('close', () => { const c = clients.get(ws); if (c?.playerId) G.removePlayer(world, c.playerId); clients.delete(ws); });
     ws.on('message', async (raw) => {
       let m; try { m = JSON.parse(raw); } catch { return; }
@@ -74,6 +74,18 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
           if (!c.playerId) return;
           if (++c.aimCount > 2) return; // reset each 100ms snap tick → ≤20/s
           G.setTarget(world, c.playerId, Number(m.x), Number(m.y));
+        } else if (m.t === 'split') {
+          if (!c.playerId) return;
+          const now = Date.now();
+          if (now - c.lastSplit < 250) return;
+          c.lastSplit = now;
+          G.split(world, c.playerId);
+        } else if (m.t === 'eject') {
+          if (!c.playerId) return;
+          const now = Date.now();
+          if (now - c.lastEject < 100) return;
+          c.lastEject = now;
+          G.eject(world, c.playerId);
         }
       } catch { send(ws, { t: 'err', msg: 'server error' }); }
     });
@@ -81,7 +93,7 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
 
   const tickTimer = setInterval(() => {
     const events = G.step(world, 50);
-    for (const e of events) if (e.t === 'eat') {
+    for (const e of events) if (e.t === 'eat' && e.fatal) {
       for (const [ws, c] of clients) if (c.playerId === e.eaten) send(ws, { t: 'dead', respawnIn: world.cfg.respawnMs });
     }
   }, 50);
