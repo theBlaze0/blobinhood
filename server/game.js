@@ -230,7 +230,10 @@ export function step(world, dtMs) {
   return events;
 }
 
-export function snapshot(world, viewerId = null) {
+const rInt = Math.round;
+const r1 = (n) => Math.round(n * 10) / 10;
+
+export function snapshot(world, viewerId = null, { light = false } = {}) {
   const c = world.cfg;
   const viewer = viewerId != null ? world.players.get(viewerId) : null;
   const vc = viewer && viewer.cells.length ? centroidOf(viewer) : { x: c.world / 2, y: c.world / 2 };
@@ -238,25 +241,27 @@ export function snapshot(world, viewerId = null) {
   const alive = [...world.players.values()].filter((p) => !p.deadUntil);
   const cells = [];
   for (const p of alive) for (const cell of p.cells) {
-    if (inView(cell)) cells.push({ pid: p.id, name: p.name, x: cell.x, y: cell.y, m: cell.m });
+    if (inView(cell)) cells.push({ pid: p.id, name: p.name, x: rInt(cell.x), y: rInt(cell.y), m: r1(cell.m) });
   }
-  return {
+  const snap = {
     me: viewer ? {
-      id: viewer.id, x: vc.x, y: vc.y, m: totalMass(viewer), dead: !!viewer.deadUntil,
-      cells: viewer.cells.map((x) => ({ x: x.x, y: x.y, m: x.m })),
+      id: viewer.id, x: rInt(vc.x), y: rInt(vc.y), m: r1(totalMass(viewer)), dead: !!viewer.deadUntil,
+      cells: viewer.cells.map((x) => ({ x: r1(x.x), y: r1(x.y), m: r1(x.m) })),
     } : null,
     cells,
-    pellets: world.pellets.filter(inView),
-    gold: world.gold.filter(inView),
-    ejected: world.ejected.filter(inView),
-    board: [...alive].sort((a, b) => totalMass(b) - totalMass(a)).slice(0, 10)
-      .map((p) => ({ name: p.name, m: Math.round(totalMass(p)), eats: p.eats })),
-    map: {
-      cells: alive.map((p) => {
-        const cc = centroidOf(p);
-        return { id: p.id, x: Math.round(cc.x), y: Math.round(cc.y), m: Math.round(totalMass(p)) };
-      }),
-      gold: world.gold.map((g) => ({ x: Math.round(g.x), y: Math.round(g.y) })),
-    },
+    gold: world.gold.filter(inView).map((g) => ({ x: rInt(g.x), y: rInt(g.y), m: r1(g.m) })),
+    ejected: world.ejected.filter(inView).map((e) => ({ x: rInt(e.x), y: rInt(e.y), m: e.m })),
   };
+  if (light) return snap;
+  snap.pellets = world.pellets.filter(inView).map((p) => ({ x: rInt(p.x), y: rInt(p.y), m: p.m }));
+  snap.board = [...alive].sort((a, b) => totalMass(b) - totalMass(a)).slice(0, 10)
+    .map((p) => ({ name: p.name, m: rInt(totalMass(p)), eats: p.eats }));
+  snap.map = {
+    cells: alive.map((p) => {
+      const cc = centroidOf(p);
+      return { id: p.id, x: rInt(cc.x), y: rInt(cc.y), m: rInt(totalMass(p)) };
+    }),
+    gold: world.gold.map((g) => ({ x: rInt(g.x), y: rInt(g.y) })),
+  };
+  return snap;
 }

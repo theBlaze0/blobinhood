@@ -37,7 +37,10 @@ function connect() {
     if (m.t === 'snap') {
       state.prev = state.cur; state.prevAt = state.curAt;
       state.cur = m; state.curAt = performance.now();
-      renderBoard(m.board);
+      if (m.pellets) { // full snap (2 Hz): static/heavy layers ride along
+        state.static = { pellets: m.pellets, map: m.map };
+        renderBoard(m.board);
+      }
       sendAim();
       if (m.me) $('mass').textContent = Math.round(m.me.m);
     } else if (m.t === 'joined') {
@@ -115,6 +118,15 @@ const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt
 
 const radius = (m) => 4 * Math.sqrt(m);
 const lerp = (a, b, t) => a + (b - a) * t;
+const speedOf = (m) => Math.max(18, Math.min(160, 400 / Math.pow(m, 0.32))); // mirrors server
+// dead-reckon own cells toward the local cursor target so input feels instant
+const extrap = (x, y, m, tgt, age) => {
+  if (!tgt || !age) return { x, y };
+  const dx = tgt.x - x, dy = tgt.y - y, d = Math.hypot(dx, dy);
+  if (d < 3) return { x, y };
+  const step = Math.min(speedOf(m) * age, d);
+  return { x: x + (dx / d) * step, y: y + (dy / d) * step };
+};
 
 const cellKeys = (cells) => {
   const seen = {};
@@ -127,7 +139,10 @@ function draw() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const cur = state.cur;
   if (!cur) return;
-  const t = Math.min(1, (performance.now() - state.curAt) / 100);
+  const now = performance.now();
+  const gap = Math.max(40, Math.min(200, state.curAt - state.prevAt));
+  const t = Math.min(1, (now - state.curAt) / gap);
+  const age = Math.min(0.25, (now - state.curAt) / 1000); // extrapolation horizon for own cells
   const prevKeys = state.prev ? cellKeys(state.prev.cells) : [];
   const curKeys = cellKeys(cur.cells);
   const prevOf = (key) => {
@@ -135,9 +150,15 @@ function draw() {
     return i >= 0 ? state.prev.cells[i] : null;
   };
 
-  const meCur = cur.me, mePrev = state.prev?.me;
-  const camX = meCur ? lerp(mePrev?.x ?? meCur.x, meCur.x, t) : state.worldSize / 2;
-  const camY = meCur ? lerp(mePrev?.y ?? meCur.y, meCur.y, t) : state.worldSize / 2;
+  const tgt = state.playing && state.mouse ? {
+    x: state.cam.x + (state.mouse.x - canvas.width / 2) / state.cam.zoom,
+    y: state.cam.y + (state.mouse.y - canvas.height / 2) / state.cam.zoom,
+  } : null;
+
+  const meCur = cur.me;
+  const meE = meCur ? extrap(meCur.x, meCur.y, meCur.m, tgt, age) : null;
+  const camX = meE ? meE.x : state.worldSize / 2;
+  const camY = meE ? meE.y : state.worldSize / 2;
   const zoom = meCur ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(meCur.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
   state.cam = { x: camX, y: camY, zoom };
 
@@ -155,7 +176,7 @@ function draw() {
   ctx.strokeStyle = '#2a3355'; ctx.lineWidth = 4;
   ctx.strokeRect(0, 0, state.worldSize, state.worldSize);
 
-  for (const p of cur.pellets) {
+  for (const p of state.static?.pellets ?? []) {
     ctx.fillStyle = '#2f9e63';
     ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, 7); ctx.fill();
   }
@@ -175,10 +196,16 @@ function draw() {
   for (const c of cur.cells) if (!biggest[c.pid] || c.m > biggest[c.pid].m) biggest[c.pid] = c;
   const order = cur.cells.map((c, i) => ({ c, key: curKeys[i] })).sort((a, b) => a.c.m - b.c.m);
   for (const { c, key } of order) {
-    const pv = prevOf(key);
-    const x = lerp(pv?.x ?? c.x, c.x, t), y = lerp(pv?.y ?? c.y, c.y, t);
-    const r = radius(lerp(pv?.m ?? c.m, c.m, t));
     const mine = c.pid === state.myId;
+    let x, y;
+    if (mine && tgt) {
+      ({ x, y } = extrap(c.x, c.y, c.m, tgt, age)); // own cells: dead-reckoned, no render-behind
+    } else {
+      const pv = prevOf(key);
+      x = lerp(pv?.x ?? c.x, c.x, t); y = lerp(pv?.y ?? c.y, c.y, t);
+    }
+    const pv = prevOf(key);
+    const r = radius(lerp(pv?.m ?? c.m, c.m, t));
     const grad = ctx.createRadialGradient(x - r / 3, y - r / 3, r / 5, x, y, r);
     grad.addColorStop(0, mine ? '#b7ffda' : '#7ce8ae');
     grad.addColorStop(1, mine ? '#3ddc84' : '#1f8f52');
@@ -193,7 +220,7 @@ function draw() {
     }
   }
   ctx.restore();
-  drawMinimap(cur);
+  if (state.static?.map) drawMinimap(state.static);
 }
 
 function drawMinimap(cur) {

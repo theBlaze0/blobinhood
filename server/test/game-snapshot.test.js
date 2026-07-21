@@ -34,6 +34,18 @@ test('snapshot map layer covers the whole world regardless of view range', () =>
   assert.ok(!('name' in s.map.cells[0])); // map layer stays lightweight
 });
 
+test('light snapshots omit pellets/board/map; coords are rounded', () => {
+  const w = createWorld({ pellets: 5, viewRange: 4000 });
+  const p = addPlayer(w, { name: 'a' });
+  p.cells[0].x = 1000.7; p.cells[0].y = 1000.2;
+  const light = snapshot(w, p.id, { light: true });
+  assert.ok(!('pellets' in light) && !('board' in light) && !('map' in light));
+  assert.strictEqual(light.cells[0].x, 1001); // rounded
+  const full = snapshot(w, p.id);
+  assert.ok('pellets' in full && 'board' in full && 'map' in full);
+  assert.ok(Number.isInteger(full.pellets[0].x));
+});
+
 test('spectator snapshot centers on world middle with null me; ejected included in view', () => {
   const w = createWorld({ pellets: 0, viewRange: 100 });
   const p = addPlayer(w, { name: 'a' });

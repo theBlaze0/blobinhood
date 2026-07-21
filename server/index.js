@@ -97,9 +97,12 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
       for (const [ws, c] of clients) if (c.playerId === e.eaten) send(ws, { t: 'dead', respawnIn: world.cfg.respawnMs });
     }
   }, 50);
+  // 20 Hz light snapshots (moving entities); every 10th is full (pellets/board/map)
+  let snapN = 0;
   const snapTimer = setInterval(() => {
-    for (const [ws, c] of clients) { c.aimCount = 0; send(ws, { t: 'snap', ...G.snapshot(world, c.playerId) }); }
-  }, 100);
+    const light = ++snapN % 10 !== 0;
+    for (const [ws, c] of clients) { c.aimCount = 0; send(ws, { t: 'snap', ...G.snapshot(world, c.playerId, { light }) }); }
+  }, 50);
 
   let watcher = null;
   if (tokenAddress) {
