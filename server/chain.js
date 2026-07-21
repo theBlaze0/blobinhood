@@ -7,7 +7,7 @@ export const CHAIN = {
   swapTopic: '0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67',
 };
 
-const pad32 = (hex) => hex.replace(/^0x/, '').toLowerCase().padStart(64, '0');
+const pad32 = (hex) => hex.replace(/^0x/i, '').toLowerCase().padStart(64, '0');
 const word = (data, i) => BigInt('0x' + data.slice(2 + i * 64, 2 + (i + 1) * 64));
 const signed = (w) => (w >= 1n << 255n ? w - (1n << 256n) : w);
 const hexBlock = (n) => '0x' + n.toString(16);
@@ -42,6 +42,7 @@ export async function rpc(method, params = []) {
 
 export async function balanceOf(token, addr) {
   const ret = await rpc('eth_call', [{ to: token, data: encBalanceOf(addr) }, 'latest']);
+  if (!ret || ret === '0x' || ret.length < 66) return 0; // address has no code yet / empty return
   return Number(word(ret, 0) / 10n ** 15n) / 1000; // whole tokens (18 decimals)
 }
 
@@ -51,33 +52,49 @@ export async function resolvePool(token) {
   return /^0x0{40}$/.test(pool) ? null : pool;
 }
 
-export function startBuyWatcher({ token, onBuy, intervalMs = 3000 }) {
-  let stopped = false, pool = null, from = null, backoff = intervalMs;
-  const is0 = tokenIsToken0(token);
-  const tick = async () => {
-    if (stopped) return;
+export const createWatcherState = () => ({ pool: null, from: null, seen: new Set() });
+
+// One deterministic iteration of the buy watcher. Split out from the timer
+// loop so its failure modes are unit-testable. rpc/resolvePool are injectable.
+export async function watcherStep(state, { token, is0, onBuy, chunk = 2000, rpc: rpcFn = rpc, resolvePool: resolveFn = resolvePool }) {
+  if (!state.pool) {
+    const pool = await resolveFn(token);
+    if (!pool) return; // still pre-launch — keep polling
+    // resolve atomically: only commit pool AFTER we know `from`, so a
+    // blockNumber failure here retries cleanly instead of stranding from=null
+    const head = parseInt(await rpcFn('eth_blockNumber'), 16);
+    state.pool = pool;
+    state.from = head + 1;
+    console.log(`buy watcher: pool ${pool} resolved for ${token}, watching from block ${state.from}`);
+    return;
+  }
+  const head = parseInt(await rpcFn('eth_blockNumber'), 16);
+  if (head < state.from) return;
+  const to = Math.min(head, state.from + chunk - 1); // chunk the range so a long backlog can't blow the provider's limit
+  const logs = await rpcFn('eth_getLogs', [{ address: state.pool, topics: [CHAIN.swapTopic], fromBlock: hexBlock(state.from), toBlock: hexBlock(to) }]);
+  for (const l of logs) {
     try {
-      if (!pool) {
-        pool = await resolvePool(token);
-        if (pool) {
-          from = (await rpc('eth_blockNumber').then((h) => parseInt(h, 16))) + 1;
-          console.log(`buy watcher: pool ${pool} resolved for ${token}, watching from block ${from}`);
-        }
-      } else {
-        const head = parseInt(await rpc('eth_blockNumber'), 16);
-        if (head >= from) {
-          const logs = await rpc('eth_getLogs', [{ address: pool, topics: [CHAIN.swapTopic], fromBlock: hexBlock(from), toBlock: hexBlock(head) }]);
-          for (const l of logs) {
-            const t = decodeSwap(l, is0);
-            if (t.side === 'buy') { console.log(`buy watcher: ${t.eth} ETH buy by ${t.buyer} (${t.tx})`); onBuy(t); }
-          }
-          from = head + 1;
-        }
-      }
-      backoff = intervalMs;
-    } catch { backoff = Math.min(backoff * 2, 30000); }
-    if (!stopped) setTimeout(tick, backoff);
+      const key = l.transactionHash + ':' + l.logIndex;
+      if (state.seen.has(key)) continue; // dedupe: overlapping ranges never double-credit
+      state.seen.add(key);
+      const t = decodeSwap(l, is0);
+      if (t.side === 'buy') { console.log(`buy watcher: ${t.eth} ETH buy by ${t.buyer} (${t.tx})`); onBuy(t); }
+    } catch (e) { console.error('buy watcher: skipping bad log —', e.message); } // one poison log can't stall the range
+  }
+  if (state.seen.size > 5000) state.seen = new Set([...state.seen].slice(-2000)); // bound the dedupe set
+  state.from = to + 1; // always advance, even if a log threw
+}
+
+export function startBuyWatcher({ token, onBuy, intervalMs = 3000, chunk = 2000 }) {
+  let stopped = false, backoff = intervalMs;
+  const is0 = tokenIsToken0(token);
+  const state = createWatcherState();
+  const loop = async () => {
+    if (stopped) return;
+    try { await watcherStep(state, { token, is0, onBuy, chunk }); backoff = intervalMs; }
+    catch (e) { console.error('buy watcher:', e.message); backoff = Math.min(backoff * 2, 30000); }
+    if (!stopped) setTimeout(loop, backoff);
   };
-  setTimeout(tick, 0);
+  setTimeout(loop, 0);
   return { stop: () => { stopped = true; } };
 }

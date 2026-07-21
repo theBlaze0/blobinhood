@@ -8,6 +8,7 @@ export const defaults = {
   eatRatio: 1.25, absorb: 0.8, respawnMs: 3000,
   speedS: 400, speedExp: 0.32, minSpeed: 18, maxSpeed: 160,
   viewRange: 1200,
+  maxGold: 300,
   viruses: 18, virusMass: 100, virusThreshold: 115, virusBonus: 10, virusImpulse: 24,
   maxCells: 8, minSplitMass: 50, splitImpulse: 28,
   minEjectMass: 30, ejectCost: 16, ejectMass: 12, ejectImpulse: 22,
@@ -74,6 +75,7 @@ export const goldMass = (eth) => Math.min(120, 10 + 30 * Math.log10(1 + eth / 0.
 export function spawnGoldPellet(world, mass) {
   const g = { x: rnd(world.cfg.world), y: rnd(world.cfg.world), m: mass };
   world.gold.push(g);
+  while (world.gold.length > world.cfg.maxGold) world.gold.shift(); // bound memory/serialization
   return g;
 }
 
