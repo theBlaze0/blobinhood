@@ -166,15 +166,47 @@ function draw() {
     y: state.cam.y + (state.mouse.y - canvas.height / 2) / state.cam.zoom,
   } : null;
 
-  const meCur = cur.me;
-  const meE = meCur ? extrap(meCur.x, meCur.y, meCur.m, tgt, age) : null;
-  const camTX = meE ? meE.x : state.worldSize / 2;
-  const camTY = meE ? meE.y : state.worldSize / 2;
-  const zoomT = meCur ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(meCur.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
-  // camera follows the predicted blob directly (easing here rubber-bands
-  // steering); only zoom eases, so mass pickups don't jolt the view
-  const camX = camTX;
-  const camY = camTY;
+  // 1) compute blended display positions FIRST, so the camera can ride the
+  // exact same track as the drawn blob — separate smoothing of camera and
+  // blob is what made growth reconciliation wobble
+  const biggest = {};
+  for (const c of cur.cells) if (!biggest[c.pid] || c.m > biggest[c.pid].m) biggest[c.pid] = c;
+  const disp = state.disp ?? [];
+  const nextDisp = [];
+  for (const c of [...cur.cells].sort((a, b) => a.m - b.m)) {
+    const mine = c.pid === state.myId;
+    let x, y;
+    if (mine && tgt) {
+      ({ x, y } = extrap(c.x, c.y, c.m, tgt, age)); // own cells: dead-reckoned, no render-behind
+    } else {
+      const pv = prevMatch(c);
+      x = lerp(pv?.x ?? c.x, c.x, t); y = lerp(pv?.y ?? c.y, c.y, t);
+    }
+    let r = radius(c.m);
+    let best = null, bd = 150;
+    for (const d of disp) {
+      if (d.pid !== c.pid) continue;
+      const dd = Math.hypot(d.x - x, d.y - y);
+      if (dd < bd) { bd = dd; best = d; }
+    }
+    if (best) {
+      const k = mine ? 0.5 : 0.35;
+      x = lerp(best.x, x, k); y = lerp(best.y, y, k);
+      r = lerp(best.r, r, 0.2);
+    }
+    nextDisp.push({ pid: c.pid, name: c.name, x, y, r, mine, tag: biggest[c.pid] === c });
+  }
+  state.disp = nextDisp;
+
+  // 2) camera = mass-weighted centroid of the DISPLAYED own cells
+  const own = nextDisp.filter((d) => d.mine);
+  let camX = state.worldSize / 2, camY = state.worldSize / 2;
+  if (own.length) {
+    let w = 0, sx = 0, sy = 0;
+    for (const d of own) { const m = d.r * d.r; w += m; sx += d.x * m; sy += d.y * m; }
+    camX = sx / w; camY = sy / w;
+  } else if (cur.me) { camX = cur.me.x; camY = cur.me.y; }
+  const zoomT = cur.me ? Math.max(0.4, Math.min(1.4, 1.6 - Math.log10(cur.me.m) / 2)) : Math.min(canvas.width, canvas.height) / 2600;
   const zoom = lerp(state.cam.zoom, zoomT, 0.15);
   state.cam = { x: camX, y: camY, zoom };
 
@@ -207,50 +239,20 @@ function draw() {
     ctx.beginPath(); ctx.arc(g.x, g.y, Math.max(8, radius(g.m) / 2), 0, 7); ctx.fill();
     ctx.restore();
   }
-  // one name tag per player, on their biggest visible cell
-  const biggest = {};
-  for (const c of cur.cells) if (!biggest[c.pid] || c.m > biggest[c.pid].m) biggest[c.pid] = c;
-  const order = [...cur.cells].sort((a, b) => a.m - b.m);
-  const disp = state.disp ?? [];
-  const nextDisp = [];
-  for (const c of order) {
-    const mine = c.pid === state.myId;
-    const pv = prevMatch(c);
-    let x, y;
-    if (mine && tgt) {
-      ({ x, y } = extrap(c.x, c.y, c.m, tgt, age)); // own cells: dead-reckoned, no render-behind
-    } else {
-      x = lerp(pv?.x ?? c.x, c.x, t); y = lerp(pv?.y ?? c.y, c.y, t);
-    }
-    let r = radius(c.m);
-    // blend the DISPLAYED blob toward its target so snap-boundary
-    // reconciliation and growth become glides, not 20 Hz pops
-    let best = null, bd = 150;
-    for (const d of disp) {
-      if (d.pid !== c.pid) continue;
-      const dd = Math.hypot(d.x - x, d.y - y);
-      if (dd < bd) { bd = dd; best = d; }
-    }
-    if (best) {
-      const k = mine ? 0.5 : 0.35;
-      x = lerp(best.x, x, k); y = lerp(best.y, y, k);
-      r = lerp(best.r, r, 0.2);
-    }
-    nextDisp.push({ pid: c.pid, x, y, r });
-    const grad = ctx.createRadialGradient(x - r / 3, y - r / 3, r / 5, x, y, r);
-    grad.addColorStop(0, mine ? '#b7ffda' : '#7ce8ae');
-    grad.addColorStop(1, mine ? '#3ddc84' : '#1f8f52');
+  for (const d of nextDisp) {
+    const grad = ctx.createRadialGradient(d.x - d.r / 3, d.y - d.r / 3, d.r / 5, d.x, d.y, d.r);
+    grad.addColorStop(0, d.mine ? '#b7ffda' : '#7ce8ae');
+    grad.addColorStop(1, d.mine ? '#3ddc84' : '#1f8f52');
     ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
-    if (mine) { ctx.strokeStyle = '#e8ecf8'; ctx.lineWidth = 2; ctx.stroke(); }
-    if (biggest[c.pid] === c) {
+    ctx.beginPath(); ctx.arc(d.x, d.y, d.r, 0, 7); ctx.fill();
+    if (d.mine) { ctx.strokeStyle = '#e8ecf8'; ctx.lineWidth = 2; ctx.stroke(); }
+    if (d.tag) {
       ctx.fillStyle = '#05220f';
-      ctx.font = `bold ${Math.max(11, r / 3)}px system-ui`;
+      ctx.font = `bold ${Math.max(11, d.r / 3)}px system-ui`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(c.name, x, y);
+      ctx.fillText(d.name, d.x, d.y);
     }
   }
-  state.disp = nextDisp;
   ctx.restore();
   if (state.static?.map) drawMinimap(state.static);
 }

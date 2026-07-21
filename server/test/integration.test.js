@@ -51,6 +51,41 @@ test('split and eject messages are accepted and rate-limited without crashing', 
   } finally { await srv.close(); }
 });
 
+test('spectators are throttled to ~5 Hz while players get 20 Hz', async () => {
+  const srv = startServer({ port: 0, domain: 'test', tokenAddress: '' });
+  try {
+    const port = await srv.ready;
+    const spec = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    await new Promise((r) => spec.on('open', r));
+    spec.send(JSON.stringify({ t: 'hello' }));
+    let count = 0;
+    spec.on('message', (raw) => { if (JSON.parse(raw).t === 'snap') count++; });
+    await new Promise((r) => setTimeout(r, 1000));
+    assert.ok(count >= 3 && count <= 8, `spectator got ${count} snaps/s, want ~5`);
+    spec.close();
+  } finally { await srv.close(); }
+});
+
+test('connections beyond maxConnections are refused', async () => {
+  const srv = startServer({ port: 0, domain: 'test', tokenAddress: '', maxConnections: 2 });
+  try {
+    const port = await srv.ready;
+    const a = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const b = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    await Promise.all([new Promise((r) => a.on('open', r)), new Promise((r) => b.on('open', r))]);
+    const c = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const first = await new Promise((res, rej) => { // listen from birth: the err rides right behind the handshake
+      c.on('message', (raw) => res(JSON.parse(raw)));
+      c.on('error', rej);
+      setTimeout(() => rej(new Error('no message from refused connection')), 5000);
+    });
+    assert.strictEqual(first.t, 'err');
+    assert.match(first.msg, /full/i);
+    await new Promise((r) => c.on('close', r)); // server hangs up
+    a.close(); b.close();
+  } finally { await srv.close(); }
+});
+
 test('spectator hello receives snapshots with null me', async () => {
   const srv = startServer({ port: 0, domain: 'test', tokenAddress: '' });
   try {

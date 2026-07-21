@@ -16,7 +16,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 let COMMIT = process.env.COMMIT || 'dev';
 if (COMMIT === 'dev') { try { COMMIT = execSync('git rev-parse --short HEAD', { cwd: WEB }).toString().trim(); } catch {} }
 
-export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddress = '' } = {}) {
+export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddress = '', maxConnections = 200 } = {}) {
   const world = G.createWorld();
   const nonces = new Map(); // addrLower -> {nonce, exp}
   const clients = new Map(); // ws -> {playerId|null, aimCount}
@@ -38,6 +38,11 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
   const send = (ws, m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
 
   wss.on('connection', (ws) => {
+    if (clients.size >= maxConnections) {
+      send(ws, { t: 'err', msg: 'server full — try again in a bit' });
+      ws.close();
+      return;
+    }
     clients.set(ws, { playerId: null, aimCount: 0, lastSplit: 0, lastEject: 0 });
     ws.on('close', () => { const c = clients.get(ws); if (c?.playerId) G.removePlayer(world, c.playerId); clients.delete(ws); });
     ws.on('message', async (raw) => {
@@ -97,11 +102,19 @@ export function startServer({ port = 8790, domain = 'localhost:8790', tokenAddre
       for (const [ws, c] of clients) if (c.playerId === e.eaten) send(ws, { t: 'dead', respawnIn: world.cfg.respawnMs });
     }
   }, 50);
-  // 20 Hz light snapshots (moving entities); every 10th is full (pellets/board/map)
+  // 20 Hz light snapshots (moving entities); every 10th is full (pellets/
+  // board/map). Spectators get every 4th snap (~5 Hz) — they're uncapped in
+  // number, so their cost must stay bounded.
   let snapN = 0;
   const snapTimer = setInterval(() => {
-    const light = ++snapN % 10 !== 0;
-    for (const [ws, c] of clients) { c.aimCount = 0; send(ws, { t: 'snap', ...G.snapshot(world, c.playerId, { light }) }); }
+    snapN++;
+    const light = snapN % 10 !== 0;
+    const spectatorTick = snapN % 4 === 0;
+    for (const [ws, c] of clients) {
+      c.aimCount = 0;
+      if (!c.playerId && !spectatorTick) continue;
+      send(ws, { t: 'snap', ...G.snapshot(world, c.playerId, { light }) });
+    }
   }, 50);
 
   let watcher = null;
