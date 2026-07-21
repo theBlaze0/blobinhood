@@ -115,8 +115,9 @@ export function eject(world, id) {
     if (cell.m < c.minEjectMass) continue;
     const dx = p.tx - cell.x, dy = p.ty - cell.y, len = Math.hypot(dx, dy) || 1;
     cell.m -= c.ejectCost;
+    const clear = radius(cell.m) + 8; // beyond pickup range so the ejector can't instantly reclaim it
     world.ejected.push({
-      x: cell.x + (dx / len) * radius(cell.m), y: cell.y + (dy / len) * radius(cell.m),
+      x: cell.x + (dx / len) * clear, y: cell.y + (dy / len) * clear,
       m: c.ejectMass, vx: (dx / len) * c.ejectImpulse, vy: (dy / len) * c.ejectImpulse,
     });
     fired++;
